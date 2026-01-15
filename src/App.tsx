@@ -3,7 +3,7 @@ import Modal from "./components/Modal";
 import "./App.css";
 import "./index.css";
 
-type Step = "ask" | "download" | "meme";
+type Step = "ask" | "download" | "installing" | "meme" | "prank2";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -24,7 +24,8 @@ function App() {
   const [nameInput, setNameInput] = useState("");
   const [friendName, setFriendName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [deferredPrompt, setDeferredPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -35,13 +36,15 @@ function App() {
   useEffect(() => {
     const checkIfInstalled = () => {
       // Check for standalone mode (PWA installed)
-      const isStandalone = window.matchMedia("(display-mode: standalone)").matches;
+      const isStandalone = window.matchMedia(
+        "(display-mode: standalone)"
+      ).matches;
       // Also check for iOS standalone mode
       const nav = window.navigator as Navigator & { standalone?: boolean };
       const isIOSStandalone = nav.standalone === true;
       // Check if running as installed app
       const isInstalledApp = isStandalone || isIOSStandalone;
-      
+
       setIsInstalled(isInstalledApp);
       return isInstalledApp;
     };
@@ -62,22 +65,35 @@ function App() {
       setIsInstalled(true);
       setIsInstallable(false);
       setDeferredPrompt(null);
-      // Automatically show meme after installation if we have a friend name
+      // Only show meme if we're installing or on download step
+      // AND the app is now installed (running in standalone mode)
       setTimeout(() => {
         setStep((currentStep) => {
-          // Only auto-advance if we're on download step and have a name
-          if (currentStep === "download") {
-            return "meme";
+          if (currentStep === "installing" || currentStep === "download") {
+            // Double check we're actually in installed app
+            const isStandalone = window.matchMedia(
+              "(display-mode: standalone)"
+            ).matches;
+            const nav = window.navigator as Navigator & {
+              standalone?: boolean;
+            };
+            const isIOSStandalone = nav.standalone === true;
+            if (isStandalone || isIOSStandalone) {
+              return "meme";
+            }
           }
           return currentStep;
         });
-      }, 300);
+      }, 500);
     };
-    
+
     window.addEventListener("appinstalled", handleAppInstalled);
 
     return () => {
-      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener(
+        "beforeinstallprompt",
+        handleBeforeInstallPrompt
+      );
       window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
@@ -92,26 +108,28 @@ function App() {
     }
 
     try {
+      // Show installing state
+      setStep("installing");
+
       await deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      
+
       if (outcome === "accepted") {
         console.log("User accepted the install prompt");
-        // Wait a moment for installation to complete, then show meme
-        setTimeout(() => {
-          setIsInstalled(true);
-          setStep("meme");
-        }, 500);
+        // Wait for appinstalled event to fire - don't show meme yet
+        // The appinstalled event handler will show the meme
       } else {
         console.log("User dismissed the install prompt");
-        // Don't proceed if user dismissed
+        // Go back to download step if dismissed
+        setStep("download");
         return;
       }
-      
+
       setDeferredPrompt(null);
       setIsInstallable(false);
     } catch (error) {
       console.error("Error during installation:", error);
+      setStep("download");
     }
   }
 
@@ -124,9 +142,18 @@ function App() {
     }
     setError(null);
     setFriendName(cleaned);
-    
+
     // Check if app is already installed - if yes, go straight to meme
-    if (isInstalled) {
+    // Double check installation status
+    const isStandalone = window.matchMedia(
+      "(display-mode: standalone)"
+    ).matches;
+    const nav = window.navigator as Navigator & { standalone?: boolean };
+    const isIOSStandalone = nav.standalone === true;
+    const currentlyInstalled = isStandalone || isIOSStandalone;
+
+    if (currentlyInstalled) {
+      setIsInstalled(true);
       setStep("meme");
     } else {
       // If not installed, show download modal
@@ -199,7 +226,20 @@ function App() {
           </div>
         )}
 
-        {step === "meme" && (
+        {step === "installing" && (
+          <div className="stack">
+            <div style={{ textAlign: "center", padding: "2rem" }}>
+              <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>⏳</div>
+              <h2 style={{ marginBottom: "1rem" }}>Installing App...</h2>
+              <p className="subtitle">
+                Please wait while we install the app. The prank will appear once
+                installation is complete!
+              </p>
+            </div>
+          </div>
+        )}
+
+        {step === "meme" && isInstalled && (
           <div className="stack">
             <div className="memeWrap">
               <img className="meme" src="/image.webp" alt="Prank meme" />
@@ -224,16 +264,38 @@ function App() {
             </p>
 
             <div className="row">
+              <button className="btn primary" onClick={() => setStep("prank2")}>
+                Need Placement Advice?
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === "prank2" && (
+          <div className="stack">
+            <div className="memeWrap">
+              <img className="meme" src="/image2.jpg" alt="Second prank" />
+              <div className="memeOverlay">
+                <div className="memeTop">
+                  {displayName ? (
+                    <>
+                      <b>{displayName}</b>, Abe ja 😂
+                    </>
+                  ) : (
+                    <>Abe Abhi padh le haath jodh rha hu App 😂</>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <p className="subtitle" style={{ marginBottom: "2rem" }}>
+              This was all a prank! Hope you had fun! 🎭
+            </p>
+
+            <div className="row">
               <button className="btn primary" onClick={reset}>
                 Prank another friend
               </button>
-              <a
-                className="btn link"
-                href="#"
-                onClick={(e) => e.preventDefault()}
-              >
-                Share (coming soon)
-              </a>
             </div>
           </div>
         )}
@@ -245,8 +307,8 @@ function App() {
         onClose={() => {}}
       >
         <p className="modalText">
-          Hey <b>{displayName || "there"}</b> — to continue, please install
-          this app.
+          Hey <b>{displayName || "there"}</b> — to continue, please install this
+          app.
         </p>
         <div className="modalGrid">
           {isInstallable ? (
@@ -265,7 +327,8 @@ function App() {
           )}
         </div>
         <p className="fineprint">
-          Please install the app to continue. The meme will appear after installation.
+          Please install the app to continue. The meme will appear after
+          installation.
         </p>
       </Modal>
     </div>
