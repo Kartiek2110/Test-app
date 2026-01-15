@@ -286,6 +286,7 @@ function App() {
                   )}
                 </div>
               </div>
+              <div className="memeBottom">Hum pai toh hain hi Noo</div>
             </div>
 
             <p className="subtitle" style={{ marginBottom: "2rem" }}>
