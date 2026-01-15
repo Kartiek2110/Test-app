@@ -26,11 +26,29 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const displayName = useMemo(() => titleCaseName(friendName), [friendName]);
 
+  // Check if app is already installed
   useEffect(() => {
+    const checkIfInstalled = () => {
+      // Check for standalone mode (PWA installed)
+      const isStandalone = window.matchMedia("(display-mode: standalone)").matches;
+      // Also check for iOS standalone mode
+      const nav = window.navigator as Navigator & { standalone?: boolean };
+      const isIOSStandalone = nav.standalone === true;
+      // Check if running as installed app
+      const isInstalledApp = isStandalone || isIOSStandalone;
+      
+      setIsInstalled(isInstalledApp);
+      return isInstalledApp;
+    };
+
+    // Check immediately
+    checkIfInstalled();
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
@@ -39,21 +57,37 @@ function App() {
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
 
-    // Check if app is already installed (use setTimeout to avoid sync setState)
-    const mediaQuery = window.matchMedia("(display-mode: standalone)");
-    if (mediaQuery.matches) {
-      setTimeout(() => setIsInstallable(false), 0);
-    }
+    // Listen for app installed event
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setIsInstallable(false);
+      setDeferredPrompt(null);
+      // Automatically show meme after installation if we have a friend name
+      setTimeout(() => {
+        setStep((currentStep) => {
+          // Only auto-advance if we're on download step and have a name
+          if (currentStep === "download") {
+            return "meme";
+          }
+          return currentStep;
+        });
+      }, 300);
+    };
+    
+    window.addEventListener("appinstalled", handleAppInstalled);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
 
   async function handleInstall() {
     if (!deferredPrompt) {
-      // Fallback: show instructions or just proceed to meme
-      setStep("meme");
+      // If no prompt available, check if already installed
+      if (isInstalled) {
+        setStep("meme");
+      }
       return;
     }
 
@@ -63,29 +97,41 @@ function App() {
       
       if (outcome === "accepted") {
         console.log("User accepted the install prompt");
+        // Wait a moment for installation to complete, then show meme
+        setTimeout(() => {
+          setIsInstalled(true);
+          setStep("meme");
+        }, 500);
       } else {
         console.log("User dismissed the install prompt");
+        // Don't proceed if user dismissed
+        return;
       }
       
       setDeferredPrompt(null);
       setIsInstallable(false);
-      setStep("meme");
     } catch (error) {
       console.error("Error during installation:", error);
-      setStep("meme");
     }
   }
 
   function onStart() {
     const cleaned = titleCaseName(nameInput);
     if (!cleaned) {
-      setError("Tell me your friend’s name first 🙂");
+      setError("Tell me your friend's name first 🙂");
       inputRef.current?.focus();
       return;
     }
     setError(null);
     setFriendName(cleaned);
-    setStep("download");
+    
+    // Check if app is already installed - if yes, go straight to meme
+    if (isInstalled) {
+      setStep("meme");
+    } else {
+      // If not installed, show download modal
+      setStep("download");
+    }
   }
 
   function reset() {
@@ -196,25 +242,30 @@ function App() {
       <Modal
         open={step === "download"}
         title="One more step…"
-        onClose={() => setStep("meme")}
+        onClose={() => {}}
       >
         <p className="modalText">
-          Hey <b>{displayName || "there"}</b> — to continue, please download
+          Hey <b>{displayName || "there"}</b> — to continue, please install
           this app.
         </p>
         <div className="modalGrid">
-          <button className="btn primary" onClick={handleInstall}>
-            {isInstallable ? "Install App" : "Download now"}
-          </button>
-          <button className="btn" onClick={() => setStep("meme")}>
-            I already did
-          </button>
-          <button className="btn danger" onClick={() => setStep("meme")}>
-            No thanks (continue anyway)
-          </button>
+          {isInstallable ? (
+            <button className="btn primary" onClick={handleInstall}>
+              Install App
+            </button>
+          ) : (
+            <div>
+              <p className="modalText" style={{ marginBottom: "1rem" }}>
+                Installation prompt will appear when you click the button below.
+              </p>
+              <button className="btn primary" onClick={handleInstall}>
+                Install App
+              </button>
+            </div>
+          )}
         </div>
         <p className="fineprint">
-          (This is the prank. There is nothing to download.)
+          Please install the app to continue. The meme will appear after installation.
         </p>
       </Modal>
     </div>
